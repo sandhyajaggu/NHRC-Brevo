@@ -1,8 +1,8 @@
 from sqlalchemy.orm import Session
-from app.models.member import Member
-from app.models.employee import Employee
 from fastapi.encoders import jsonable_encoder
 
+from app.models.member import Member
+from app.models.employee import Employee
 
 
 class EmployeeRepository:
@@ -17,19 +17,24 @@ class EmployeeRepository:
 
         return employee
 
-    #  NEW METHOD (IMPORTANT)
+    @staticmethod
+    def get_by_email(db: Session, email: str):
+
+        return (
+            db.query(Employee)
+            .filter(Employee.official_email == email)
+            .first()
+        )
+
     @staticmethod
     def get_employees_with_details(db: Session):
 
-        results = db.query(
-            Member,
-            Employee
-        ).join(
-            Employee,
-            Employee.member_id == Member.id
-        ).filter(
-            Member.candidate_type == "employee"
-        ).all()
+        results = (
+            db.query(Member, Employee)
+            .join(Employee, Employee.member_id == Member.id)
+            .filter(Member.candidate_type == "employee")
+            .all()
+        )
 
         return jsonable_encoder([
             {

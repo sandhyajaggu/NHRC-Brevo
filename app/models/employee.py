@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Integer, String
 from app.db.base import Base
 
 
@@ -27,7 +27,15 @@ class Employee(Base):
     referral_id = Column(String)
 
     official_email = Column(String)
-    email_otp = Column(String)
+    email_otp = Column(String(6), nullable=True)
+
+    otp_expiry = Column(DateTime(timezone=True), nullable=True)
+
+    otp_verified = Column(Boolean, default=False)
+
+    otp_attempts = Column(Integer, default=0)
+
+    last_otp_sent = Column(DateTime(timezone=True), nullable=True)
 
     user_email = Column(String)
     password_hash = Column(String)

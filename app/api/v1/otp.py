@@ -18,10 +18,23 @@ def send_otp(email: str, db: Session = Depends(get_db)):
 
 #  VERIFY OTP
 @router.post("/verify")
-def verify_otp_api(payload: OTPVerifyRequest, db: Session = Depends(get_db)):
-    is_valid, message = verify_otp(db, payload.email, payload.otp)
+def verify_otp_api(
+    payload: OTPVerifyRequest,
+    db: Session = Depends(get_db)
+):
+    success, message = verify_otp(
+        db,
+        payload.email,
+        payload.otp
+    )
 
-    if not is_valid:
-        raise HTTPException(status_code=400, detail=message)
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail=message
+        )
 
-    return {"message": message}
+    return {
+        "success": True,
+        "message": message
+    }

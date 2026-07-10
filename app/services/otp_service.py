@@ -1,73 +1,74 @@
-# app/services/otp_service.py
-
-import random
-from datetime import datetime, timedelta
-from sqlalchemy.orm import Session
-from app.models.otp import OTPVerification
+from datetime import datetime, timedelta, timezone
+from app.repositories.employee_repository import EmployeeRepository
+from app.services.brevo_service import send_otp_email
+from app.utils.otp import generate_random_otp
 
 
-def generate_and_store_otp(db: Session, email: str):
-    otp = str(random.randint(100000, 999999))
-    expiry = datetime.utcnow() + timedelta(minutes=5)
+# ============================================================
+# GENERATE OTP
+# ============================================================
 
-    #  FIX: handle duplicates safely (instead of .first())
-    existing_records = db.query(OTPVerification).filter(
-        OTPVerification.email == email
-    ).all()
+def generate_and_store_otp(db, email):
 
-    if existing_records:
-        # keep first, delete duplicates
-        record = existing_records[0]
+    employee = EmployeeRepository.get_by_email(db, email)
 
-        for extra in existing_records[1:]:
-            db.delete(extra)
+    if not employee:
+        raise Exception("Employee not found")
 
-        # update existing
-        record.otp = otp
-        record.expires_at = expiry
-        record.is_verified = False
-        record.is_used = False
+    otp = generate_random_otp()
 
-    else:
-        record = OTPVerification(
-            email=email,
-            otp=otp,
-            expires_at=expiry,
-            is_verified=False,
-            is_used=False
-        )
-        db.add(record)
+    current_time = datetime.now(timezone.utc)
+
+    employee.email_otp = otp
+    employee.otp_expiry = current_time + timedelta(minutes=10)
+    employee.otp_verified = False
+    employee.otp_attempts = 0
+    employee.last_otp_sent = current_time
 
     db.commit()
+    db.refresh(employee)
 
-    print(f"OTP for {email}: {otp}")  # debug log
+    send_otp_email(
+        email=email,
+        otp=otp,
+    )
 
-    return otp
+    return True
 
 
-def verify_otp(db: Session, email: str, otp: str):
-    record = db.query(OTPVerification).filter(
-        OTPVerification.email == email
-    ).first()
+# ============================================================
+# VERIFY OTP
+# ============================================================
 
-    if not record:
-        return False, "OTP not found"
+def verify_otp(db, email, otp):
 
-    #  expiry check
-    if datetime.utcnow() > record.expires_at:
-        return False, "OTP expired"
+    employee = EmployeeRepository.get_by_email(db, email)
 
-    #  otp match check
-    if record.otp != otp:
+    if not employee:
+        return False, "Employee not found"
+
+    if employee.email_otp != otp:
+        employee.otp_attempts = (employee.otp_attempts or 0) + 1
+        db.commit()
         return False, "Invalid OTP"
 
-    #  already used check
-    if record.is_used:
-        return False, "OTP already used"
+    if employee.otp_expiry is None:
+        return False, "OTP not found"
 
-    #  mark used
-    record.is_verified = True
-    #record.is_used = True
+    current_time = datetime.now(timezone.utc)
+
+    if employee.otp_expiry < current_time:
+        employee.email_otp = None
+        employee.otp_expiry = None
+        db.commit()
+        return False, "OTP expired"
+
+    employee.otp_verified = True
+    employee.email_otp = None
+    employee.otp_expiry = None
+    employee.otp_attempts = 0
+    employee.last_otp_sent = None
+
     db.commit()
 
     return True, "OTP verified successfully"
