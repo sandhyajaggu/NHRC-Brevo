@@ -1,0 +1,2101 @@
+
+from datetime import datetime
+from typing import Optional
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from sqlalchemy.orm import Session
+
+from app.db.session import get_db
+from app.models.black_profile import BlackProfile
+from app.models.board_member import BoardMember
+from app.models.event_job_role import EventJobRole
+from app.models.event_registration import EventRegistration
+from app.models.hr_job_fair_registration import HRJobFairRegistration
+from app.models.hr_job_fair_role import HRJobFairRole
+from app.models.job import Job
+from app.models.job_application import JobApplication
+from app.models.job_fair import JobFair
+from app.models.member import Member
+from app.models.member_benefit import MemberBenefit
+from app.models.service_event import ServiceEvent
+from app.models.student_job_fair_registration import StudentJobFairRegistration
+from app.models.training_program import TrainingProgram
+from app.models.training_registration import TrainingRegistration
+from app.models.user import User
+from app.schemas.black_profile import BlackProfileCreate, BlackProfileResponse, BlackProfileUpdate
+from app.schemas.board_member import BoardMemberResponse, BoardMemberCreate
+from app.schemas.event_job_role import EventJobRoleCreate
+from app.schemas.job import JobCreate, JobUpdate
+from app.schemas.jobfair import JobFairCreate, JobFairResponse, JobFairUpdate
+from app.schemas.member_benefit import BenefitBulkDelete, BenefitStatusUpdate, MemberBenefitCreate, MemberBenefitResponse, MemberBenefitUpdate
+from app.schemas.training import TrainingCreate
+from app.schemas.training_registration_create import TrainingRegistrationCreate
+from app.services.admin_service import AdminService
+from app.schemas.member import MemberStatusUpdate
+from app.schemas.member import BulkDeleteRequest
+from app.schemas.event import EventCreate
+
+from app.services.download import DownloadService
+from app.services.event_service import EventService
+from app.services.registration_service import (
+    RegistrationManagementService
+)
+
+
+
+from app.core.security import (
+    get_current_user,
+    get_current_admin
+)
+
+
+from app.core.dependencies import get_current_admin
+
+
+router = APIRouter(
+    prefix="/admin",
+    tags=["Admin"]
+)
+
+@router.get("/admin/db-check")
+def db_check(db: Session = Depends(get_db)):
+    database = db.execute(
+        text("SELECT current_database()")
+    ).scalar()
+
+    return {
+        "database": database
+    }
+
+
+@router.get("/admin/table-check")
+def table_check(db: Session = Depends(get_db)):
+    tables = db.execute(
+        text("""
+        SELECT tablename
+        FROM pg_tables
+        WHERE schemaname='public'
+        """)
+    ).fetchall()
+
+    return [row[0] for row in tables]
+
+# ================= DASHBOARD =================
+@router.get("/dashboard")
+def dashboard(
+    db: Session = Depends(get_db),
+    admin: Member = Depends(get_current_admin)
+):
+    return AdminService.dashboard_stats(db)
+
+
+# ================= USERS =================
+@router.get("/employees")
+def get_employees(
+    db: Session = Depends(get_db),
+    admin: Member = Depends(get_current_admin)
+):
+    return AdminService.list_users(db, "employee")
+
+
+@router.get("/students")
+def get_students(
+    db: Session = Depends(get_db),
+    admin: Member = Depends(get_current_admin)  
+):
+    return AdminService.list_users(db, "student")
+
+
+@router.get("/representatives")
+def get_representatives(
+    db: Session = Depends(get_db),
+    admin: Member = Depends(get_current_admin)   
+):
+    return AdminService.list_users(db, "representative")
+
+@router.get("/member/{membership_id}")
+def get_member_full_details(
+    membership_id: str,
+    db: Session = Depends(get_db),
+    admin: Member = Depends(get_current_admin)
+):
+    return AdminService.get_member_full_details(db, membership_id)
+
+
+# ================= APPROVAL =================
+
+
+
+@router.put("/members/{membership_id}/approve")
+def approve_member(membership_id: str, db: Session = Depends(get_db)):
+    return AdminService.approve_user(db, membership_id)
+
+
+@router.put("/members/{membership_id}/reject")
+def reject_member(membership_id: str, db: Session = Depends(get_db)):
+    return AdminService.reject_user(db, membership_id)
+
+
+@router.delete("/members/{membership_id}")
+def delete_member(membership_id: str, db: Session = Depends(get_db)):
+    return AdminService.delete_user(db, membership_id)
+
+
+@router.post("/members/bulk-delete")
+def bulk_delete_members(
+    payload: BulkDeleteRequest,
+    db: Session = Depends(get_db),
+    admin: Member = Depends(get_current_admin)
+):
+    return AdminService.bulk_delete_members(db, payload.membership_ids)
+
+#=================== JOBS ===========================================================
+
+@router.post("/create")
+def create_job(
+    payload: JobCreate,
+    db: Session = Depends(get_db),
+    admin = Depends(get_current_admin)
+):
+
+    job = Job(
+        **payload.dict(),
+
+        created_by=admin.membership_id,
+        creator_role="ADMIN",
+        
+
+        status="APPROVED",
+        is_public=True
+    )
+
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    return {
+        "message": "Job created successfully",
+        "job": {
+            "id": job.id,
+            "title": job.title,
+            "company_name": job.company_name,
+            "department": job.department,
+            "work_mode": job.work_mode,
+            "roles_responsibilities": job.roles_responsibilities,
+            "required_skills": job.required_skills,
+            "qualification_required": job.qualification_required,
+            "min_experience": job.min_experience,
+            "max_experience": job.max_experience,
+            "min_salary": job.min_salary,
+            "max_salary": job.max_salary,
+            "perks_benefits": job.perks_benefits,
+            "location": job.location,
+            "locality": job.locality,
+            "openings": job.openings,
+            "application_deadline": job.application_deadline,
+            "whatsapp_number": job.whatsapp_number
+        }
+    }
+
+@router.put("/approve/{job_id}")
+def approve_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    admin = Depends(get_current_admin)
+):
+
+    job = db.query(Job).filter(Job.id == job_id).first()
+
+    if not job:
+        raise HTTPException(404, "Job Not Found")
+    # ADMIN JOBS CANNOT BE APPROVED AGAIN
+    if job.creator_role == "ADMIN":
+        raise HTTPException(
+            status_code=400,
+            detail="Admin Created Jobs Are Already Approved"
+        )
+
+    job.status = "APPROVED"
+    job.is_public = True
+
+    db.commit()
+
+    return {
+        "message": "Job Approved",
+        "job": {
+            "id": job.id,
+            "title": job.title,
+            "company_name": job.company_name,
+            "department": job.department,
+            "work_mode": job.work_mode,
+            "roles_responsibilities": job.roles_responsibilities,
+            "required_skills": job.required_skills,
+            "qualification_required": job.qualification_required,
+            "min_experience": job.min_experience,
+            "max_experience": job.max_experience,
+            "min_salary": job.min_salary,
+            "max_salary": job.max_salary,
+            "perks_benefits": job.perks_benefits,
+            "location": job.location,
+            "locality": job.locality,
+            "openings": job.openings,
+            "application_deadline": job.application_deadline,
+            "whatsapp_number": job.whatsapp_number
+        }
+    }
+
+@router.put("/reject/{job_id}")
+def reject_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    admin = Depends(get_current_admin)
+):
+
+    job = db.query(Job).filter(Job.id == job_id).first()
+
+    if not job:
+        raise HTTPException(404, "Job Not Found")
+    
+
+    if job.creator_role == "ADMIN":
+        raise HTTPException(
+            403,
+            "Admin Jobs Cannot Be Rejected"
+        )
+
+    job.status = "REJECTED"
+    job.is_public = False
+
+    db.commit()
+
+    return {
+        "message": "Job Rejecred",
+        "job": {
+            "id": job.id,
+            "title": job.title,
+            "company_name": job.company_name,
+            "department": job.department,
+            "work_mode": job.work_mode,
+            "roles_responsibilities": job.roles_responsibilities,
+            "required_skills": job.required_skills,
+            "qualification_required": job.qualification_required,
+            "min_experience": job.min_experience,
+            "max_experience": job.max_experience,
+            "min_salary": job.min_salary,
+            "max_salary": job.max_salary,
+            "perks_benefits": job.perks_benefits,
+            "location": job.location,
+            "locality": job.locality,
+            "openings": job.openings,
+            "application_deadline": job.application_deadline,
+            "whatsapp_number": job.whatsapp_number
+        }
+    }
+
+@router.delete("/delete/{job_id}")
+def delete_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    admin = Depends(get_current_admin)
+):
+
+    job = db.query(Job).filter(Job.id == job_id).first()
+
+    if not job:
+        raise HTTPException(404, "Job Not Found")
+
+    db.delete(job)
+    db.commit()
+
+    return {
+        "message": "Job Deleted Successfully"
+    }
+
+@router.put("/update/{job_id}")
+def update_job(
+    job_id: int,
+    payload: JobUpdate,
+    db: Session = Depends(get_db),
+    admin = Depends(get_current_admin)
+):
+
+    job = db.query(Job).filter(Job.id == job_id).first()
+
+    if not job:
+        raise HTTPException(404, "Job Not Found")
+
+    for key, value in payload.dict().items():
+        setattr(job, key, value)
+
+    db.commit()
+    db.refresh(job)
+
+    return {
+        "message": "Job Updated",
+        "job": {
+            "id": job.id,
+            "title": job.title,
+            "company_name": job.company_name,
+            "department": job.department,
+            "work_mode": job.work_mode,
+            "roles_responsibilities": job.roles_responsibilities,
+            "required_skills": job.required_skills,
+            "qualification_required": job.qualification_required,
+            "min_experience": job.min_experience,
+            "max_experience": job.max_experience,
+            "min_salary": job.min_salary,
+            "max_salary": job.max_salary,
+            "perks_benefits": job.perks_benefits,
+            "location": job.location,
+            "locality": job.locality,
+            "openings": job.openings,
+            "application_deadline": job.application_deadline,
+            "whatsapp_number": job.whatsapp_number
+        }
+    }
+
+
+@router.get("/{job_id}/applications")
+def get_job_applications(
+    job_id: int,
+    db: Session = Depends(get_db),
+    admin = Depends(get_current_admin)
+):
+
+    applications = db.query(JobApplication).filter(
+        JobApplication.job_id == job_id
+    ).all()
+
+    return applications
+
+from sqlalchemy import func, text
+from app.models.job_application import JobApplication
+
+@router.get("/all")
+def admin_all_jobs(
+    db: Session = Depends(get_db),
+    admin = Depends(get_current_admin)
+):
+
+    jobs = db.query(Job).all()
+
+    response = []
+
+    for job in jobs:
+
+        total = db.query(JobApplication).filter(
+            JobApplication.job_id == job.id
+        ).count()
+
+        shortlisted = db.query(JobApplication).filter(
+            JobApplication.job_id == job.id,
+            JobApplication.status == "SHORTLISTED"
+        ).count()
+
+        rejected = db.query(JobApplication).filter(
+            JobApplication.job_id == job.id,
+            JobApplication.status == "REJECTED"
+        ).count()
+
+        response.append({
+
+            # BASIC INFO
+            "job_id": job.id,
+            "title": job.title,
+            "company_name": job.company_name,
+            "department": job.department,
+
+            # JOB DETAILS
+            "work_mode": job.work_mode,
+            "roles_responsibilities": job.roles_responsibilities,
+            "required_skills": job.required_skills,
+            "qualification_required": job.qualification_required,
+
+            # EXPERIENCE
+            "min_experience": job.min_experience,
+            "max_experience": job.max_experience,
+
+            # SALARY
+            "min_salary": job.min_salary,
+            "max_salary": job.max_salary,
+
+            # EXTRA DETAILS
+            "perks_benefits": job.perks_benefits,
+            "location": job.location,
+            "locality": job.locality,
+            "openings": job.openings,
+            "application_deadline": job.application_deadline,
+            "whatsapp_number": job.whatsapp_number,
+
+            # CREATED INFO
+            "created_by": job.created_by,
+            "creator_role": job.creator_role,
+            "status": job.status,
+            "created_at": job.created_at,
+
+            # APPLICATION COUNTS
+            "all_responses": total,
+            "shortlisted": shortlisted,
+            "rejected": rejected
+        })
+
+    return response
+@router.get("/preview/{job_id}")
+def job_preview(
+    job_id: int,
+    db: Session = Depends(get_db),
+    admin = Depends(get_current_admin)
+):
+
+    job = db.query(Job).filter(
+        Job.id == job_id
+    ).first()
+
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail="Job Not Found"
+        )
+  
+    return {
+        "job_id": job.id,
+        "title": job.title,
+        "company_name": job.company_name,
+        "department": job.department,
+        "work_mode": job.work_mode,
+        "roles_responsibilities": job.roles_responsibilities,
+        "required_skills": job.required_skills,
+        "qualification_required": job.qualification_required,
+        "min_experience": job.min_experience,
+        "max_experience": job.max_experience,
+        "min_salary": job.min_salary,
+        "max_salary": job.max_salary,
+        "perks_benefits": job.perks_benefits,
+        "location": job.location,
+        "locality": job.locality,
+        "openings": job.openings,
+        "application_deadline": job.application_deadline,
+        "whatsapp_number": job.whatsapp_number,
+        "status": job.status,
+        "created_by": job.created_by,
+        "creator_role": job.creator_role,
+        "created_at": job.created_at
+    }
+from app.models.job_application import JobApplication
+
+@router.put("/application/{application_id}/shortlist")
+def shortlist_candidate(
+    application_id: int,
+    db: Session = Depends(get_db),
+    admin = Depends(get_current_admin)
+):
+
+    application = db.query(JobApplication).filter(
+        JobApplication.id == application_id
+    ).first()
+
+    if not application:
+        raise HTTPException(
+            status_code=404,
+            detail="Application Not Found"
+        )
+
+    application.status = "SHORTLISTED"
+
+    db.commit()
+
+    return {
+        "message": "Candidate Shortlisted Successfully",
+        "application_id": application.id,
+        "student_membership_id": application.student_membership_id
+    }
+
+@router.put("/application/{application_id}/reject")
+def reject_candidate(
+    application_id: int,
+    db: Session = Depends(get_db),
+    admin = Depends(get_current_admin)
+):
+
+    application = db.query(JobApplication).filter(
+        JobApplication.id == application_id
+    ).first()
+
+    if not application:
+        raise HTTPException(
+            status_code=404,
+            detail="Application Not Found"
+        )
+
+    application.status = "REJECTED"
+
+    db.commit()
+
+    return {
+        "message": "Candidate Rejected Successfully",
+        "application_id": application.id,
+        "student_membership_id": application.student_membership_id
+    }
+
+@router.post("/events/create")
+def create_event(
+    payload: EventCreate,
+    db: Session = Depends(get_db)
+):
+    event = ServiceEvent(**payload.dict())
+
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+
+    return event
+from app.models.job_fair import JobFair
+
+
+@router.post(
+    "/admin/job-fairs/create",
+    response_model=JobFairResponse
+)
+def create_job_fair(
+    request: JobFairCreate,
+    db: Session = Depends(get_db)
+):
+    job_fair = JobFair(
+        service_id=request.service_id,
+        title=request.title,
+        description=request.description,
+        organization_name=request.organization_name,
+        contact_number=request.contact_number,
+        contact_email=request.contact_email,
+        banner_image=request.banner_image,
+        start_date=request.start_date,
+        end_date=request.end_date,
+        start_time=request.start_time,
+        end_time=request.end_time,
+        location=request.location
+    )
+
+    db.add(job_fair)
+    db.commit()
+    db.refresh(job_fair)
+
+    return job_fair
+
+@router.get("/registrations")
+def get_all_registrations(
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin)
+):
+
+    registrations = db.query(
+        EventRegistration
+    ).all()
+
+    result = []
+
+    for reg in registrations:
+
+        registration_for = None
+
+        registration_name = None
+
+        if reg.event_id:
+
+            event = db.query(ServiceEvent).filter(
+                ServiceEvent.id == reg.event_id
+            ).first()
+
+            registration_for = "EVENT"
+
+            registration_name = event.title if event else None
+
+        elif reg.job_fair_id:
+
+            job_fair = db.query(JobFair).filter(
+                JobFair.id == reg.job_fair_id
+            ).first()
+
+            registration_for = "JOB_FAIR"
+
+            registration_name = (
+                job_fair.title
+                if job_fair else None
+            )
+
+        result.append({
+
+            "registration_id": reg.id,
+
+            "member_id": reg.member_id,
+
+            "member_type": reg.member_type,
+
+            "full_name": reg.full_name,
+
+            "email": reg.email,
+
+            "phone": reg.phone,
+
+            "location": reg.location,
+
+            "registration_type": registration_for,
+
+            "registered_for": registration_name,
+
+            "status": reg.status,
+
+            "created_at": reg.created_at
+        })
+
+    return {
+        "total_registrations": len(result),
+        "registrations": result
+    }
+
+'''
+@router.post("/job-fairs/{job_fair_id}/roles")
+def add_job_role(
+    job_fair_id: int,
+    payload: EventJobRoleCreate,
+    db: Session = Depends(get_db)
+):
+
+    role = EventJobRole(
+        job_fair_id=job_fair_id,
+        company_name=payload.company_name,
+        hiring_type=payload.hiring_type,
+        job_role=payload.job_role,
+        experience=payload.experience,
+        openings=payload.openings,
+        job_location=payload.job_location,
+        salary_min=payload.salary_min,
+        salary_max=payload.salary_max,
+        education_required=payload.education_required
+    )
+
+    db.add(role)
+
+    db.commit()
+
+    db.refresh(role)
+
+    return role
+'''
+
+@router.delete("/events/{event_id}")
+def delete_event(
+    event_id: int,
+    db: Session = Depends(get_db)
+):
+
+    event = db.query(ServiceEvent).filter(
+        ServiceEvent.id == event_id
+    ).first()
+
+    if not event:
+        raise HTTPException(
+            status_code=404,
+            detail="Event not found"
+        )
+
+    db.delete(event)
+
+    db.commit()
+
+    return {
+        "message": "Event deleted successfully"
+    }
+@router.get("/dashboard")
+def registration_dashboard(
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin)
+):
+
+    total = db.query(
+        EventRegistration
+    ).count()
+
+    event_count = db.query(
+        EventRegistration
+    ).filter(
+        EventRegistration.event_id != None
+    ).count()
+
+    job_fair_count = db.query(
+        EventRegistration
+    ).filter(
+        EventRegistration.job_fair_id != None
+    ).count()
+
+    return {
+
+        "total_registrations": total,
+
+        "event_registrations": event_count,
+
+        "job_fair_registrations": job_fair_count
+    }
+@router.get("/student-registrations")
+def get_student_registrations(
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin)
+):
+
+    registrations = db.query(EventRegistration).filter(
+        EventRegistration.member_type == "STUDENT"
+    ).all()
+
+    return registrations
+@router.get("/admin/hr-registrations")
+def get_hr_registrations(
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin)
+):
+
+    registrations = db.query(
+        EventRegistration
+    ).filter(
+        EventRegistration.member_type == "HR"
+    ).all()
+
+    return registrations
+
+@router.get("/event/{event_id}/registrations")
+def get_event_registrations(
+    event_id: int,
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin)
+):
+
+    registrations = db.query(EventRegistration).filter(
+        EventRegistration.event_id == event_id
+    ).all()
+
+    return {
+        "event_id": event_id,
+        "total_registrations": len(registrations),
+        "registrations": registrations
+    }
+
+
+@router.get("/job-fair/{job_fair_id}/registrations")
+def get_job_fair_registrations(
+    job_fair_id: int,
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin)
+):
+
+    student_registrations = (
+        db.query(StudentJobFairRegistration)
+        .filter(StudentJobFairRegistration.job_fair_id == job_fair_id)
+        .all()
+    )
+
+    hr_registrations = (
+        db.query(HRJobFairRegistration)
+        .filter(HRJobFairRegistration.job_fair_id == job_fair_id)
+        .all()
+    )
+
+    return {
+        "job_fair_id": job_fair_id,
+        "total_students": len(student_registrations),
+        "total_companies": len(hr_registrations),
+        "student_registrations": student_registrations,
+        "hr_registrations": hr_registrations
+    }
+@router.put(
+    "/job-fairs/hr-registration/{registration_id}/approve"
+)
+def approve_hr_registration(
+    registration_id: int,
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin)
+):
+
+    registration = (
+        db.query(HRJobFairRegistration)
+        .filter(
+            HRJobFairRegistration.id == registration_id
+        )
+        .first()
+    )
+
+    if not registration:
+        raise HTTPException(
+            status_code=404,
+            detail="Registration not found"
+        )
+
+    registration.status = "APPROVED"
+
+    db.commit()
+
+    return {
+        "message": "HR registration approved"
+    }
+
+@router.put(
+    "/job-fairs/hr-registration/{registration_id}/reject"
+)
+def reject_hr_registration(
+    registration_id: int,
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin)
+):
+
+    registration = (
+        db.query(HRJobFairRegistration)
+        .filter(
+            HRJobFairRegistration.id == registration_id
+        )
+        .first()
+    )
+
+    if not registration:
+        raise HTTPException(
+            status_code=404,
+            detail="Registration not found"
+        )
+
+    registration.status = "REJECTED"
+
+    db.commit()
+
+    return {
+        "message": "HR registration rejected"
+    }
+
+@router.put(
+    "/job-fairs/student-registration/{registration_id}/approve"
+)
+def approve_student_registration(
+    registration_id: int,
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin)
+):
+
+    registration = (
+        db.query(StudentJobFairRegistration)
+        .filter(
+            StudentJobFairRegistration.id == registration_id
+        )
+        .first()
+    )
+
+    if not registration:
+        raise HTTPException(
+            status_code=404,
+            detail="Registration not found"
+        )
+
+    registration.status = "APPROVED"
+
+    db.commit()
+
+    return {
+        "message": "Student registration approved"
+    }
+
+@router.put(
+    "/job-fairs/student-registration/{registration_id}/reject"
+)
+def reject_student_registration(
+    registration_id: int,
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin)
+):
+
+    registration = (
+        db.query(StudentJobFairRegistration)
+        .filter(
+            StudentJobFairRegistration.id == registration_id
+        )
+        .first()
+    )
+
+    if not registration:
+        raise HTTPException(
+            status_code=404,
+            detail="Registration not found"
+        )
+
+    registration.status = "REJECTED"
+
+    db.commit()
+
+    return {
+        "message": "Student registration rejected"
+    }
+
+@router.get("/job-fairs/hr-registrations/pending")
+def get_pending_hr_registrations(
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin)
+):
+
+    return (
+        db.query(HRJobFairRegistration)
+        .filter(
+            HRJobFairRegistration.status == "PENDING"
+        )
+        .all()
+    )
+
+@router.get("/job-fairs/student-registrations/pending")
+def get_pending_student_registrations(
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin)
+):
+
+    return (
+        db.query(StudentJobFairRegistration)
+        .filter(
+            StudentJobFairRegistration.status == "PENDING"
+        )
+        .all()
+    )
+@router.get("/events")
+def get_all_events(
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin)
+):
+
+    events = db.query(ServiceEvent).all()
+
+    return {
+        "total_events": len(events),
+        "events": [
+            {
+                "id": event.id,
+                "title": event.title,
+                "program_category": event.program_category,
+                "organizer_name": event.organizer_name,
+                "event_mode": event.event_mode,
+                "start_date": event.start_date,
+                "end_date": event.end_date,
+                "location": event.location
+            }
+            for event in events
+        ]
+    }
+@router.get("/admin/job-fairs")
+def get_all_job_fairs(db: Session = Depends(get_db)):
+    fairs = db.query(JobFair).all()
+
+    return [
+        {
+            "id": fair.id,
+            "service_id": fair.service_id,
+            "title": fair.title,
+            "description": fair.description,
+            "organization_name": fair.organization_name,
+            "contact_number": fair.contact_number,
+            "contact_email": fair.contact_email,
+            "banner_image": fair.banner_image,
+            "start_date": fair.start_date,
+            "end_date": fair.end_date,
+            "start_time": fair.start_time,
+            "end_time": fair.end_time,
+            "location": fair.location
+        }
+        for fair in fairs
+    ]
+@router.get("/admin/job-fairs/registrations")
+def get_all_job_fair_registrations(
+    db: Session = Depends(get_db)
+):
+
+    student_registrations = (
+        db.query(StudentJobFairRegistration)
+        .all()
+    )
+
+    hr_registrations = (
+        db.query(HRJobFairRegistration)
+        .all()
+    )
+
+    students = []
+
+    for student in student_registrations:
+
+        job_fair = (
+            db.query(JobFair)
+            .filter(JobFair.id == student.job_fair_id)
+            .first()
+        )
+
+        students.append({
+            "registration_id": student.id,
+            "job_fair_id": student.job_fair_id,
+            "job_fair_title": job_fair.title if job_fair else None,
+
+            "full_name": student.full_name,
+            "email": student.email,
+            "phone": student.phone,
+            "location": student.location,
+            "iam_a": student.iam_a,
+            "nhrc_id": student.nhrc_id,
+
+            "college_name": student.college_name,
+            "year_of_passout": student.year_of_passout,
+            "department": student.department,
+            "preferred_job_role": student.preferred_job_role,
+            "technical_skills": student.technical_skills,
+
+            "receive_updates": student.receive_updates,
+            "created_at": student.created_at
+        })
+
+    hrs = []
+
+    for hr in hr_registrations:
+
+        job_fair = (
+            db.query(JobFair)
+            .filter(JobFair.id == hr.job_fair_id)
+            .first()
+        )
+
+        roles = (
+            db.query(HRJobFairRole)
+            .filter(HRJobFairRole.registration_id == hr.id)
+            .all()
+        )
+
+        hrs.append({
+            "registration_id": hr.id,
+            "job_fair_id": hr.job_fair_id,
+            "job_fair_title": job_fair.title if job_fair else None,
+
+            "company_name": hr.company_name,
+            "company_url": hr.company_url,
+
+            "full_name": hr.full_name,
+            "email": hr.email,
+            "phone": hr.phone,
+            "nhrc_id": hr.nhrc_id,
+
+            "receive_updates": hr.receive_updates,
+
+            "roles": [
+                {
+                    "hiring_type": role.hiring_type,
+                    "job_role": role.job_role,
+                    "experience": role.experience,
+                    "no_of_openings": role.no_of_openings,
+                    "salary_min": role.salary_min,
+                    "salary_max": role.salary_max,
+                    "job_location": role.job_location,
+                    "education_required": role.education_required
+                }
+                for role in roles
+            ],
+
+            "created_at": hr.created_at
+        })
+
+    return {
+        "student_registrations": students,
+        "hr_registrations": hrs
+    }
+@router.get(
+    "/admin/job-fairs/{job_fair_id}",
+    response_model=JobFairResponse
+)
+def get_job_fair_by_id(
+    job_fair_id: int,
+    db: Session = Depends(get_db)
+):
+    job_fair = (
+        db.query(JobFairResponse)
+        .filter(JobFair.id == job_fair_id)
+        .first()
+    )
+
+    if not job_fair:
+        raise HTTPException(
+            status_code=404,
+            detail="Job Fair not found"
+        )
+
+    return job_fair
+
+
+
+
+@router.put(
+    "/admin/job-fairs/{job_fair_id}",
+    response_model=JobFairResponse
+)
+def update_job_fair(
+    job_fair_id: int,
+    payload: JobFairUpdate,
+    db: Session = Depends(get_db)
+):
+    job_fair = (
+        db.query(JobFair)
+        .filter(JobFair.id == job_fair_id)
+        .first()
+    )
+
+    if not job_fair:
+        raise HTTPException(
+            status_code=404,
+            detail="Job Fair not found"
+        )
+
+    update_data = payload.model_dump(
+        exclude_unset=True
+    )
+
+    for key, value in update_data.items():
+        setattr(
+            job_fair,
+            key,
+            value
+        )
+
+    db.commit()
+    db.refresh(job_fair)
+
+    return job_fair
+
+@router.delete(
+    "/admin/job-fairs/{job_fair_id}"
+)
+def delete_job_fair(
+    job_fair_id: int,
+    db: Session = Depends(get_db)
+):
+    job_fair = (
+        db.query(JobFair)
+        .filter(JobFair.id == job_fair_id)
+        .first()
+    )
+
+    if not job_fair:
+        raise HTTPException(
+            status_code=404,
+            detail="Job Fair not found"
+        )
+
+    db.delete(job_fair)
+    db.commit()
+
+    return {
+        "message": "Job Fair deleted successfully"
+    }
+
+@router.post("/training/create")
+def create_training(
+
+    payload: TrainingCreate,
+
+    db: Session = Depends(get_db),
+
+    admin=Depends(get_current_admin)
+):
+
+    training = TrainingProgram(
+
+        title=payload.title,
+
+        short_description=payload.short_description,
+
+        program_category=payload.program_category,
+
+        training_mode=payload.training_mode,
+
+        trainer_name=payload.trainer_name,
+
+        capacity=payload.capacity,
+
+        contact_email=payload.contact_email,
+
+        banner_image=payload.banner_image,
+
+        start_date=payload.start_date,
+
+        end_date=payload.end_date,
+
+        start_time=payload.start_time,
+
+        end_time=payload.end_time,
+
+        location=payload.location,
+
+        created_by=admin.id,
+
+        created_at=datetime.utcnow(),
+
+        status="OPEN"
+    )
+
+    db.add(training)
+
+    db.commit()
+
+    db.refresh(training)
+
+    return {
+    "message": "Training Program Created",
+    "training": {
+        "id": training.id,
+        "title": training.title,
+        "short_description": training.short_description,
+        "program_category": training.program_category,
+        "training_mode": training.training_mode,
+        "trainer_name": training.trainer_name,
+        "capacity": training.capacity,
+        "contact_email": training.contact_email,
+        "banner_image": training.banner_image,
+        "start_date": training.start_date,
+        "end_date": training.end_date,
+        "start_time": training.start_time,
+        "end_time": training.end_time,
+        "location": training.location,
+        "status": training.status,
+        "created_by": training.created_by,
+        "created_at": training.created_at
+    }
+}
+@router.get("/training-programs")
+def get_training_programs(
+
+    db: Session = Depends(get_db),
+
+    admin=Depends(get_current_admin)
+):
+
+    return db.query(
+        TrainingProgram
+    ).all()
+@router.get("/training/{training_id}")
+def get_training(
+
+    training_id: int,
+
+    db: Session = Depends(get_db),
+
+    admin=Depends(get_current_admin)
+):
+
+    training = db.query(
+        TrainingProgram
+    ).filter(
+        TrainingProgram.id == training_id
+    ).first()
+
+    if not training:
+        raise HTTPException(
+            status_code=404,
+            detail="Training Program not found"
+        )
+
+    return training
+@router.put("/training/{training_id}")
+def update_training(
+
+    training_id: int,
+
+    payload: TrainingCreate,
+
+    db: Session = Depends(get_db),
+
+    admin=Depends(get_current_admin)
+):
+
+    training = db.query(
+        TrainingProgram
+    ).filter(
+        TrainingProgram.id == training_id
+    ).first()
+
+    if not training:
+        raise HTTPException(
+            status_code=404,
+            detail="Training Program not found"
+        )
+
+    training.title = payload.title
+
+    training.short_description = payload.short_description
+
+    training.program_category = payload.program_category
+
+    training.training_mode = payload.training_mode
+
+    training.trainer_name = payload.trainer_name
+
+    training.capacity = payload.capacity
+
+    training.contact_email = payload.contact_email
+
+    training.banner_image = payload.banner_image
+
+    training.start_date = payload.start_date
+
+    training.end_date = payload.end_date
+
+    training.start_time = payload.start_time
+
+    training.end_time = payload.end_time
+
+    training.location = payload.location
+
+    db.commit()
+
+    return {
+        "message": "Training Program Updated"
+    }
+@router.delete("/training/{training_id}")
+def delete_training(
+
+    training_id: int,
+
+    db: Session = Depends(get_db),
+
+    admin=Depends(get_current_admin)
+):
+
+    training = db.query(
+        TrainingProgram
+    ).filter(
+        TrainingProgram.id == training_id
+    ).first()
+
+    if not training:
+        raise HTTPException(
+            status_code=404,
+            detail="Training Program not found"
+        )
+
+    db.delete(training)
+
+    db.commit()
+
+    return {
+        "message": "Training Program Deleted"
+    }
+@router.get("/training-registrations")
+def get_training_registrations(
+
+    db: Session = Depends(get_db),
+
+    admin=Depends(get_current_admin)
+):
+
+    return db.query(
+        TrainingRegistration
+    ).all()
+@router.get("/training/student-registrations")
+def get_student_training_registrations(
+
+    db: Session = Depends(get_db),
+
+    admin=Depends(get_current_admin)
+):
+
+    return db.query(
+        TrainingRegistration
+    ).filter(
+        TrainingRegistration.member_type == "STUDENT"
+    ).all()
+@router.get("/training/hr-registrations")
+def get_hr_training_registrations(
+
+    db: Session = Depends(get_db),
+
+    admin=Depends(get_current_admin)
+):
+
+    return db.query(
+        TrainingRegistration
+    ).filter(
+        TrainingRegistration.member_type.in_(
+            ["EMPLOYEE", "HR"]
+        )
+    ).all()
+@router.get("/training/{training_id}/registrations")
+def get_training_registrations_by_training(
+
+    training_id: int,
+
+    db: Session = Depends(get_db),
+
+    admin=Depends(get_current_admin)
+):
+
+    return db.query(
+        TrainingRegistration
+    ).filter(
+        TrainingRegistration.training_id == training_id
+    ).all()
+@router.get("/training/{training_id}/summary")
+def training_summary(
+
+    training_id: int,
+
+    db: Session = Depends(get_db),
+
+    admin=Depends(get_current_admin)
+):
+
+    total = db.query(
+        TrainingRegistration
+    ).filter(
+        TrainingRegistration.training_id == training_id
+    ).count()
+
+    students = db.query(
+        TrainingRegistration
+    ).filter(
+        TrainingRegistration.training_id == training_id,
+        TrainingRegistration.member_type == "STUDENT"
+    ).count()
+
+    hr_count = db.query(
+        TrainingRegistration
+    ).filter(
+        TrainingRegistration.training_id == training_id,
+        TrainingRegistration.member_type.in_(
+            ["EMPLOYEE", "HR"]
+        )
+    ).count()
+
+    return {
+        "training_id": training_id,
+        "total_registrations": total,
+        "students": students,
+        "hr_registrations": hr_count
+    }
+@router.get("/board-member-debug")
+def board_member_debug():
+    from app.schemas.board_member import BoardMemberCreate
+
+    return {
+        "fields": list(BoardMemberCreate.model_fields.keys())
+    }
+
+@router.post(
+    "/board-members",
+    response_model=BoardMemberResponse
+)
+def create_board_member(
+    payload: BoardMemberCreate,
+    db: Session = Depends(get_db)
+):
+    board_member = BoardMember(
+        full_name=payload.full_name,
+        professional_title=payload.professional_title,
+        current_position=payload.current_position,
+        photo_url=payload.photo_url,
+        linkedin_url=payload.linkedin_url,
+        twitter_url=payload.twitter_url,
+        facebook_url=payload.facebook_url
+    )
+
+    db.add(board_member)
+    db.commit()
+    db.refresh(board_member)
+
+    return board_member
+
+@router.get(
+    "/board-members",
+    response_model=list[BoardMemberResponse]
+)
+def get_board_members(
+    db: Session = Depends(get_db)
+):
+    return db.query(BoardMember)\
+        .order_by(BoardMember.id.desc())\
+        .all()
+@router.get(
+    "/board-members/{member_id}",
+    response_model=BoardMemberResponse
+)
+def get_board_member(
+    member_id: int,
+    db: Session = Depends(get_db)
+):
+    member = db.query(BoardMember)\
+        .filter(BoardMember.id == member_id)\
+        .first()
+
+    if not member:
+        raise HTTPException(
+            status_code=404,
+            detail="Board Member not found"
+        )
+
+    return member
+
+@router.put(
+    "/board-members/{member_id}",
+    response_model=BoardMemberResponse
+)
+def update_board_member(
+    member_id: int,
+    payload: BoardMemberCreate,
+    db: Session = Depends(get_db)
+):
+    member = db.query(BoardMember)\
+        .filter(BoardMember.id == member_id)\
+        .first()
+
+    if not member:
+        raise HTTPException(
+            status_code=404,
+            detail="Board Member not found"
+        )
+
+    member.full_name = payload.full_name
+    member.professional_title = payload.professional_title
+    member.current_position = payload.current_position
+
+    member.photo_url = payload.photo_url
+
+    member.linkedin_url = payload.linkedin_url
+    member.twitter_url = payload.twitter_url
+    member.facebook_url = payload.facebook_url
+
+    db.commit()
+    db.refresh(member)
+
+    return member
+
+@router.delete("/board-members/{member_id}")
+def delete_board_member(
+    member_id: int,
+    db: Session = Depends(get_db)
+):
+    member = db.query(BoardMember)\
+        .filter(BoardMember.id == member_id)\
+        .first()
+
+    if not member:
+        raise HTTPException(
+            status_code=404,
+            detail="Board Member not found"
+        )
+
+    db.delete(member)
+    db.commit()
+
+    return {
+        "message": "Board Member deleted successfully"
+    }
+
+@router.put(
+    "/event-registrations/{registration_id}/approve"
+)
+def approve_event_registration(
+    registration_id: int,
+    db: Session = Depends(get_db)
+):
+    registration = (
+        db.query(EventRegistration)
+        .filter(
+            EventRegistration.id == registration_id
+        )
+        .first()
+    )
+
+    if not registration:
+        raise HTTPException(
+            status_code=404,
+            detail="Registration not found"
+        )
+
+    registration.status = "APPROVED"
+
+    db.commit()
+
+    return {
+        "message": "Applicant approved successfully"
+    }
+@router.put(
+    "/event-registrations/{registration_id}/reject"
+)
+def reject_event_registration(
+    registration_id: int,
+    db: Session = Depends(get_db)
+):
+    registration = (
+        db.query(EventRegistration)
+        .filter(
+            EventRegistration.id == registration_id
+        )
+        .first()
+    )
+
+    if not registration:
+        raise HTTPException(
+            status_code=404,
+            detail="Registration not found"
+        )
+
+    registration.status = "REJECTED"
+
+    db.commit()
+
+    return {
+        "message": "Applicant rejected successfully"
+    }
+@router.delete(
+    "/event-registrations/{registration_id}"
+)
+def delete_event_registration(
+    registration_id: int,
+    db: Session = Depends(get_db)
+):
+    registration = (
+        db.query(EventRegistration)
+        .filter(
+            EventRegistration.id == registration_id
+        )
+        .first()
+    )
+
+    if not registration:
+        raise HTTPException(
+            status_code=404,
+            detail="Registration not found"
+        )
+
+    db.delete(registration)
+    db.commit()
+
+    return {
+        "message": "Registration deleted successfully"
+    }
+@router.put(
+    "/training-registrations/{registration_id}/approve"
+)
+def approve_training_registration(
+    registration_id: int,
+    db: Session = Depends(get_db)
+):
+    registration = (
+        db.query(TrainingRegistration)
+        .filter(
+            TrainingRegistration.id == registration_id
+        )
+        .first()
+    )
+
+    if not registration:
+        raise HTTPException(
+            status_code=404,
+            detail="Registration not found"
+        )
+
+    registration.status = "APPROVED"
+
+    db.commit()
+
+    return {
+        "message": "Training applicant approved"
+    }
+@router.put(
+    "/training-registrations/{registration_id}/reject"
+)
+def reject_training_registration(
+    registration_id: int,
+    db: Session = Depends(get_db)
+):
+    registration = (
+        db.query(TrainingRegistration)
+        .filter(
+            TrainingRegistration.id == registration_id
+        )
+        .first()
+    )
+
+    if not registration:
+        raise HTTPException(
+            status_code=404,
+            detail="Registration not found"
+        )
+
+    registration.status = "REJECTED"
+
+    db.commit()
+
+    return {
+        "message": "Training applicant rejected"
+    }
+@router.delete(
+    "/training-registrations/{registration_id}"
+)
+def delete_training_registration(
+    registration_id: int,
+    db: Session = Depends(get_db)
+):
+    registration = (
+        db.query(TrainingRegistration)
+        .filter(
+            TrainingRegistration.id == registration_id
+        )
+        .first()
+    )
+
+    if not registration:
+        raise HTTPException(
+            status_code=404,
+            detail="Registration not found"
+        )
+
+    db.delete(registration)
+    db.commit()
+
+    return {
+        "message": "Training registration deleted"
+    }
+
+@router.get("/event-registrations")
+def get_event_registrations(
+    status: str | None = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(EventRegistration)
+
+    if status:
+
+        status = status.upper()
+
+        if status not in [
+            "PENDING",
+            "APPROVED",
+            "REJECTED"
+        ]:
+            raise HTTPException(
+                status_code=400,
+                detail="Status must be PENDING, APPROVED or REJECTED"
+            )
+
+        query = query.filter(
+            EventRegistration.status == status
+        )
+
+    return query.order_by(
+        EventRegistration.id.desc()
+    ).all()
+@router.get("/training-registrations")
+def get_training_registrations(
+    status: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(TrainingRegistration)
+
+    if status:
+        status = status.upper()
+
+        if status not in ["PENDING", "APPROVED", "REJECTED"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Status must be PENDING, APPROVED or REJECTED"
+            )
+
+        query = query.filter(
+            TrainingRegistration.status == status
+        )
+
+    registrations = query.order_by(
+        TrainingRegistration.id.desc()
+    ).all()
+
+    return registrations
+
+@router.post(
+    "/member-benefits",
+    response_model=MemberBenefitResponse
+)
+def create_benefit(
+    payload: MemberBenefitCreate,
+    db: Session = Depends(get_db)
+):
+    benefit = MemberBenefit(
+        category=payload.category.upper(),
+        content=payload.content,
+        is_active=True
+    )
+
+    db.add(benefit)
+    db.commit()
+    db.refresh(benefit)
+
+    return benefit
+
+@router.get(
+    "/member-benefits/{category}",
+    response_model=list[MemberBenefitResponse]
+)
+def get_benefits(
+    category: str,
+    db: Session = Depends(get_db)
+):
+    return (
+        db.query(MemberBenefit)
+        .filter(
+            MemberBenefit.category == category.upper()
+        )
+        .order_by(
+            MemberBenefit.id.desc()
+        )
+        .all()
+    )
+@router.put(
+    "/member-benefits/{benefit_id}",
+    response_model=MemberBenefitResponse
+)
+def update_benefit(
+    benefit_id: int,
+    payload: MemberBenefitUpdate,
+    db: Session = Depends(get_db)
+):
+    benefit = (
+        db.query(MemberBenefit)
+        .filter(
+            MemberBenefit.id == benefit_id
+        )
+        .first()
+    )
+
+    if not benefit:
+        raise HTTPException(
+            status_code=404,
+            detail="Benefit not found"
+        )
+
+    benefit.content = payload.content
+
+    db.commit()
+    db.refresh(benefit)
+
+    return benefit
+@router.put(
+    "/member-benefits/{benefit_id}/status"
+)
+def update_benefit_status(
+    benefit_id: int,
+    payload: BenefitStatusUpdate,
+    db: Session = Depends(get_db)
+):
+    benefit = (
+        db.query(MemberBenefit)
+        .filter(
+            MemberBenefit.id == benefit_id
+        )
+        .first()
+    )
+
+    if not benefit:
+        raise HTTPException(
+            status_code=404,
+            detail="Benefit not found"
+        )
+
+    benefit.is_active = payload.is_active
+
+    db.commit()
+
+    return {
+        "message": "Status updated successfully"
+    }
+@router.delete(
+    "/member-benefits/{benefit_id}"
+)
+def delete_benefit(
+    benefit_id: int,
+    db: Session = Depends(get_db)
+):
+    benefit = (
+        db.query(MemberBenefit)
+        .filter(
+            MemberBenefit.id == benefit_id
+        )
+        .first()
+    )
+
+    if not benefit:
+        raise HTTPException(
+            status_code=404,
+            detail="Benefit not found"
+        )
+
+    db.delete(benefit)
+    db.commit()
+
+    return {
+        "message": "Benefit deleted successfully"
+    }
+
+@router.delete(
+    "/member-benefits"
+)
+def delete_multiple_benefits(
+    payload: BenefitBulkDelete,
+    db: Session = Depends(get_db)
+):
+    (
+        db.query(MemberBenefit)
+        .filter(
+            MemberBenefit.id.in_(payload.ids)
+        )
+        .delete(
+            synchronize_session=False
+        )
+    )
+
+    db.commit()
+
+    return {
+        "message": "Benefits deleted successfully"
+    }
+
+@router.post(
+    "/admin/black-profiles",
+    response_model=BlackProfileResponse
+)
+def create_black_profile(
+    payload: BlackProfileCreate,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+
+    profile = BlackProfile(
+        employee_name=payload.employee_name,
+        designation=payload.designation,
+        status=payload.status,
+
+        uan_number=payload.uan_number,
+        employee_id=payload.employee_id,
+        aadhaar_number=payload.aadhaar_number,
+        pan_number=payload.pan_number,
+
+        email=payload.email,
+        phone=payload.phone,
+        location=payload.location,
+
+        department=payload.department,
+        mode_of_work=payload.mode_of_work,
+        reporting_to=payload.reporting_to,
+
+        date_of_joining=payload.date_of_joining,
+        experience=payload.experience,
+
+        remarks=payload.remarks,
+
+        document_name=payload.document_name,
+        document_url=payload.document_url,
+
+        hr_name=payload.hr_name,
+        organisation=payload.organisation,
+        hr_department=payload.hr_department,
+
+        created_by="ADMIN",
+        created_by_id=current_user.id
+    )
+
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+
+    return profile
+
+@router.get("/black-profiles")
+def get_all_black_profiles(
+    db: Session = Depends(get_db)
+):
+    return (
+        db.query(BlackProfile)
+        .order_by(BlackProfile.id.desc())
+        .all()
+    )
+@router.get(
+    "/admin/black-profiles/{profile_id}",
+    response_model=BlackProfileResponse
+)
+def get_black_profile_by_id(
+    profile_id: int,
+    db: Session = Depends(get_db)
+):
+    
+    profile = (
+        db.query(BlackProfile)
+        .filter(BlackProfile.id == profile_id)
+        .first()
+    )
+
+    if not profile:
+        raise HTTPException(
+            status_code=404,
+            detail="Black profile not found"
+        )
+
+    return profile
+
+@router.put("/black-profiles/{profile_id}")
+def update_black_profile(
+    profile_id: int,
+    payload: BlackProfileUpdate,
+    db: Session = Depends(get_db)
+):
+    profile = (
+        db.query(BlackProfile)
+        .filter(BlackProfile.id == profile_id)
+        .first()
+    )
+
+    if not profile:
+        raise HTTPException(
+            status_code=404,
+            detail="Black profile not found"
+        )
+
+    for key, value in payload.model_dump().items():
+        setattr(profile, key, value)
+
+    db.commit()
+    db.refresh(profile)
+
+    return profile
+
+@router.delete("/black-profiles/{profile_id}")
+def delete_black_profile(
+    profile_id: int,
+    db: Session = Depends(get_db)
+):
+    profile = (
+        db.query(BlackProfile)
+        .filter(BlackProfile.id == profile_id)
+        .first()
+    )
+
+    if not profile:
+        raise HTTPException(
+            status_code=404,
+            detail="Black profile not found"
+        )
+
+    db.delete(profile)
+    db.commit()
+
+    return {
+        "message": "Black profile deleted successfully"
+    }
+
+@router.get("/black-profiles")
+def get_black_profiles(
+    db: Session = Depends(get_db)
+):
+    return (
+        db.query(BlackProfile)
+        .order_by(BlackProfile.id.desc())
+        .all()
+    )
+
+
