@@ -105,11 +105,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
                 detail="OTP not found"
             )
 
-        if otp_record.is_used:
-            raise HTTPException(
-                status_code=400,
-                detail="OTP already used"
-            )
+        
 
         if otp_record.expires_at < datetime.utcnow():
             raise HTTPException(
@@ -123,13 +119,14 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
                 detail="Invalid OTP"
             )
 
+       
         if not otp_record.is_verified:
             raise HTTPException(
                 status_code=400,
                 detail="OTP not verified"
             )
 
-        otp_record.is_used = True
+        
         db.commit()
 
     # ==============================

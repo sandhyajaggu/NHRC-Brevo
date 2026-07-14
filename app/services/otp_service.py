@@ -30,7 +30,7 @@ def generate_and_store_otp(
 
     if otp_record:
 
-        otp_record.otp_hash = otp
+        otp_record.otp = otp
         otp_record.purpose = purpose
         otp_record.candidate_type = candidate_type
         otp_record.expires_at = expiry
@@ -42,7 +42,7 @@ def generate_and_store_otp(
 
         otp_record = OTPVerification(
             email=email,
-            otp_hash=otp,
+            otp=otp,
             purpose=purpose,
             candidate_type=candidate_type,
             expires_at=expiry,
@@ -80,7 +80,7 @@ def verify_otp(db, email, otp):
     if otp_record.is_verified:
         return False, "OTP already verified"
 
-    if otp_record.otp_hash != otp:
+    if otp_record.otp != otp:
         otp_record.attempts += 1
         db.commit()
         return False, "Invalid OTP"

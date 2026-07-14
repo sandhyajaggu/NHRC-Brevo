@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import HTTPException
 from app.models.employee import Employee
 from app.models.otp_verifications import OTPVerification
@@ -44,35 +46,25 @@ class EmployeeService:
         # =========================
         # OTP VALIDATION
         # =========================
-        otp_record = db.query(OTPVerification).filter(
-            OTPVerification.email == payload.official_email
-        ).first()
-
-        if not otp_record:
-            raise HTTPException(
-                status_code=400,
-                detail="OTP not found"
+        otp_record = (
+            db.query(OTPVerification)
+            .filter(
+                OTPVerification.email == payload.official_email,
+                OTPVerification.purpose == "REGISTER",
+                OTPVerification.candidate_type == "employee"
             )
+            .order_by(OTPVerification.id.desc())
+            .first()
+        )
+
+        if otp_record is None:
+            raise HTTPException(status_code=400, detail="OTP not found")
 
         if not otp_record.is_verified:
-            raise HTTPException(
-                status_code=400,
-                detail="OTP not verified"
-            )
+            raise HTTPException(status_code=400, detail="OTP not verified")
 
-        if otp_record.is_used:
-            raise HTTPException(
-                status_code=400,
-                detail="OTP already used"
-            )
-
-        from datetime import datetime
-
-        if datetime.utcnow() > otp_record.expires_at:
-            raise HTTPException(
-                status_code=400,
-                detail="OTP expired"
-            )
+        if otp_record.expires_at < datetime.now(timezone.utc):
+            raise HTTPException(status_code=400, detail="OTP expired")
 
         # =========================
         # UPDATE MEMBER TABLE
@@ -114,7 +106,7 @@ class EmployeeService:
 
             official_email=payload.official_email,
 
-            email_otp=otp_record.otp,
+            
 
             user_email=payload.user_email,
 

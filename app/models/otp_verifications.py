@@ -10,7 +10,7 @@ class OTPVerification(Base):
 
     email = Column(String(255), index=True, nullable=False)
 
-    otp_hash = Column(String(255), nullable=False)
+    otp = Column(String(6), nullable=False)
 
     purpose = Column(String(50), nullable=False)
 
