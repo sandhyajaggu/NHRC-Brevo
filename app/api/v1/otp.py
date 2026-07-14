@@ -11,17 +11,30 @@ router = APIRouter(prefix="/otp", tags=["OTP"])
 
 #  SEND OTP
 @router.post("/send-otp")
-def send_otp(email: str, db: Session = Depends(get_db)):
-    generate_and_store_otp(db, email)
-    return {"message": "OTP sent successfully"}
+def send_otp(
+    email: str,
+    purpose: str = "REGISTER",
+    candidate_type: str = None,
+    db: Session = Depends(get_db),
+):
 
+    generate_and_store_otp(
+        db=db,
+        email=email,
+        purpose=purpose,
+        candidate_type=candidate_type,
+    )
 
+    return {
+        "message": "OTP sent successfully"
+    }
 #  VERIFY OTP
-@router.post("/verify")
+@router.post("/verify-otp")
 def verify_otp_api(
     payload: OTPVerifyRequest,
     db: Session = Depends(get_db)
 ):
+
     success, message = verify_otp(
         db,
         payload.email,

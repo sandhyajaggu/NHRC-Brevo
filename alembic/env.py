@@ -13,7 +13,6 @@ from app.models.employee import Employee
 from app.models.student import StudentUniversityDetails, StudentAutonomousDetails
 from app.models.contact import ContactMessage
 from app.models.user import User
-from app.models.otp import OTPVerification
 from app.models.token_blacklist import TokenBlacklist
 from app.models import user, board_member, member_benefit, black_profile
 from app.models.talent_publication import TalentPublication
@@ -22,6 +21,7 @@ from app.models.talent_publication_config import TalentPublicationConfig
 from app.models.student_job_fair_registration import StudentJobFairRegistration
 from app.models.hr_job_fair_registration import HRJobFairRegistration
 from app.models.hr_job_fair_role import HRJobFairRole
+from app.models.otp_verifications import OTPVerification
 target_metadata = Base.metadata
 
 config = context.config

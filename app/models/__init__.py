@@ -3,7 +3,6 @@ from .employee import Employee
 from .student import StudentUniversityDetails, StudentAutonomousDetails
 from .contact import ContactMessage
 from .user import User
-from .otp import OTPVerification
 from .token_blacklist import TokenBlacklist
 from app.models.job import Job
 from app.models.job_application import JobApplication
@@ -14,6 +13,5 @@ from .job_fair import JobFair
 from .event_job_role import EventJobRole
 from app.models.training_program import TrainingProgram
 from app.models.board_member import BoardMember
-
-
+from app.models.otp_verifications import OTPVerification
 from app.models.talent_publication import TalentPublication

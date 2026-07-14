@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.member import Member
-from app.models.otp import OTPVerification
+from app.models.otp_verifications import OTPVerification
 #from app.models.user import User, UserRole
 from app.models.token_blacklist import TokenBlacklist
 from app.schemas.auth import RegisterAdminRequest, RegisterRequest, LoginRequest

@@ -13,7 +13,7 @@ def test_brevo():
     service = BrevoEmailService()
 
     success = service.send_email(
-        to_email="pallesandhya97@gmail.com",
+        to_email="suryatejaperiketi570@gmail.com",
         subject="NHRC OTP Test",
         html_content="""
         <h2>National Human Resource Club</h2>

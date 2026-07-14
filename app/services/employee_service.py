@@ -1,6 +1,6 @@
 from fastapi import HTTPException
 from app.models.employee import Employee
-from app.models.otp import OTPVerification
+from app.models.otp_verifications import OTPVerification
 from app.models.member import Member
 from app.core.security import hash_password
 
