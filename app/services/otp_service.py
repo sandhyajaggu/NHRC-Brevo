@@ -12,8 +12,7 @@ from app.utils.otp import  generate_random_otp, verify_value
 def generate_and_store_otp(
     db,
     email: str,
-    purpose: str = "REGISTER",
-    candidate_type: str = None,
+    
 ):
 
     otp = generate_random_otp()
@@ -22,17 +21,15 @@ def generate_and_store_otp(
 
     expiry = current_time + timedelta(minutes=10)
 
-    otp_record = (
-        db.query(OTPVerification)
-        .filter(OTPVerification.email == email)
-        .first()
-    )
+    otp_record = db.query(
+        OTPVerification
+    ).filter(
+        OTPVerification.email == email
+    ).first()
 
     if otp_record:
 
         otp_record.otp = otp
-        otp_record.purpose = purpose
-        otp_record.candidate_type = candidate_type
         otp_record.expires_at = expiry
         otp_record.last_sent_at = current_time
         otp_record.is_verified = False
@@ -43,8 +40,6 @@ def generate_and_store_otp(
         otp_record = OTPVerification(
             email=email,
             otp=otp,
-            purpose=purpose,
-            candidate_type=candidate_type,
             expires_at=expiry,
             last_sent_at=current_time,
             attempts=0,
@@ -69,10 +64,12 @@ def generate_and_store_otp(
 def verify_otp(db, email, otp):
 
     otp_record = (
-        db.query(OTPVerification)
-        .filter(OTPVerification.email == email)
-        .first()
+    db.query(OTPVerification)
+    .filter(
+        OTPVerification.email == email
     )
+    .first()
+)
 
     if otp_record is None:
         return False, "OTP not found"

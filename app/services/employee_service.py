@@ -49,9 +49,7 @@ class EmployeeService:
         otp_record = (
             db.query(OTPVerification)
             .filter(
-                OTPVerification.email == payload.official_email,
-                OTPVerification.purpose == "REGISTER",
-                OTPVerification.candidate_type == "employee"
+                OTPVerification.email == payload.official_email
             )
             .order_by(OTPVerification.id.desc())
             .first()
@@ -120,7 +118,6 @@ class EmployeeService:
         # =========================
         # MARK OTP USED
         # =========================
-        otp_record.is_used = True
 
         db.commit()
 

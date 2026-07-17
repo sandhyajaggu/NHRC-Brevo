@@ -1,6 +1,6 @@
 """rename otp_hash to otp
 
-Revision ID: xxxxxxxx
+Revision ID: 8c3b1a4d9e20
 Revises: 5fa35f84d8a5
 """
 
@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "xxxxxxxx"
+revision = "8c3b1a4d9e20"
 down_revision = "5fa35f84d8a5"
 branch_labels = None
 depends_on = None
