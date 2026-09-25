@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     SMTP_HOST: str | None = None
     SMTP_PORT: int | None = None
-
+ 
     EMAIL_USER: str | None = None
     EMAIL_PASSWORD: str | None = None
 

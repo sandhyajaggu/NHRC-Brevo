@@ -10,7 +10,9 @@ from app.templates.otp_email import otp_email_template
 # ============================================================
 
 configuration = sib_api_v3_sdk.Configuration()
+
 configuration.api_key["api-key"] = settings.BREVO_API_KEY
+
 
 api_instance = sib_api_v3_sdk.TransactionalEmailsApi(
     sib_api_v3_sdk.ApiClient(configuration)
@@ -27,38 +29,101 @@ class BrevoEmailService:
     def send_email(
         to_email: str,
         subject: str,
-        html_content: str
+        html_content: str,
     ):
+        """
+        Send transactional email through Brevo.
+        Returns True only when Brevo accepts the request.
+        Returns False when Brevo rejects/fails the request.
+        """
+
+        # ----------------------------------------------------
+        # Sender
+        # ----------------------------------------------------
 
         sender = {
             "name": settings.BREVO_SENDER_NAME,
-            "email": settings.BREVO_SENDER_EMAIL
+            "email": settings.BREVO_SENDER_EMAIL,
         }
+
+        # ----------------------------------------------------
+        # Receiver
+        # ----------------------------------------------------
 
         to = [
             {
-                "email": to_email
+                "email": to_email,
             }
         ]
+
+        # ----------------------------------------------------
+        # Email object
+        # ----------------------------------------------------
 
         email = sib_api_v3_sdk.SendSmtpEmail(
             sender=sender,
             to=to,
             subject=subject,
-            html_content=html_content
+            html_content=html_content,
         )
+
+        # ----------------------------------------------------
+        # Send email
+        # ----------------------------------------------------
 
         try:
 
-            api_instance.send_transac_email(email)
+            response = api_instance.send_transac_email(
+                email
+            )
 
-            print(f"Email sent successfully to {to_email}")
+            print("========================================")
+            print("BREVO EMAIL SENT")
+            print("========================================")
+            print(f"To: {to_email}")
+            print(f"Subject: {subject}")
+            print(f"Brevo response: {response}")
+            print("========================================")
 
             return True
 
         except ApiException as e:
 
-            print("Brevo Error:", e)
+            print("========================================")
+            print("BREVO EMAIL ERROR")
+            print("========================================")
+
+            print(f"To: {to_email}")
+            print(f"Subject: {subject}")
+            print(f"Error: {e}")
+
+            # Brevo API status code
+            if hasattr(e, "status"):
+                print(f"Status code: {e.status}")
+
+            # Brevo response body
+            if hasattr(e, "body"):
+                print(f"Response body: {e.body}")
+
+            # Brevo headers
+            if hasattr(e, "headers"):
+                print(f"Headers: {e.headers}")
+
+            print("========================================")
+
+            return False
+
+        except Exception as e:
+
+            print("========================================")
+            print("UNEXPECTED EMAIL ERROR")
+            print("========================================")
+
+            print(f"To: {to_email}")
+            print(f"Subject: {subject}")
+            print(f"Error: {e}")
+
+            print("========================================")
 
             return False
 
@@ -69,15 +134,18 @@ class BrevoEmailService:
 
 def send_otp_email(
     email: str,
-    otp: str
+    otp: str,
 ):
+    """
+    Send OTP verification email.
+    """
 
     html = otp_email_template(otp)
 
     return BrevoEmailService.send_email(
         to_email=email,
         subject="NHRC Email Verification OTP",
-        html_content=html
+        html_content=html,
     )
 
 
@@ -87,16 +155,19 @@ def send_otp_email(
 
 def send_reset_password_email(
     email: str,
-    otp: str
+    otp: str,
 ):
+    """
+    Send password reset OTP email.
+    """
 
     html = f"""
     <html>
 
     <body
         style="
-            font-family:Arial;
-            padding:20px;
+            font-family: Arial;
+            padding: 20px;
         "
     >
 
@@ -114,8 +185,8 @@ def send_reset_password_email(
 
         <h1
             style="
-                color:#0B6EFD;
-                letter-spacing:5px;
+                color: #0B6EFD;
+                letter-spacing: 5px;
             "
         >
             {otp}
@@ -146,7 +217,7 @@ def send_reset_password_email(
     return BrevoEmailService.send_email(
         to_email=email,
         subject="NHRC Password Reset OTP",
-        html_content=html
+        html_content=html,
     )
 
 
@@ -156,8 +227,11 @@ def send_reset_password_email(
 
 def send_welcome_email(
     email: str,
-    name: str
+    name: str,
 ):
+    """
+    Send welcome email.
+    """
 
     html = f"""
     <html>
@@ -185,7 +259,7 @@ def send_welcome_email(
     return BrevoEmailService.send_email(
         to_email=email,
         subject="Welcome to NHRC",
-        html_content=html
+        html_content=html,
     )
 
 
@@ -195,8 +269,11 @@ def send_welcome_email(
 
 def send_job_fair_approved(
     email: str,
-    name: str
+    name: str,
 ):
+    """
+    Send job fair approval email.
+    """
 
     html = f"""
     <html>
@@ -223,7 +300,7 @@ def send_job_fair_approved(
     return BrevoEmailService.send_email(
         to_email=email,
         subject="Job Fair Registration Approved",
-        html_content=html
+        html_content=html,
     )
 
 
@@ -233,8 +310,11 @@ def send_job_fair_approved(
 
 def send_job_fair_rejected(
     email: str,
-    name: str
+    name: str,
 ):
+    """
+    Send job fair rejection email.
+    """
 
     html = f"""
     <html>
@@ -261,5 +341,5 @@ def send_job_fair_rejected(
     return BrevoEmailService.send_email(
         to_email=email,
         subject="Job Fair Registration Rejected",
-        html_content=html
+        html_content=html,
     )

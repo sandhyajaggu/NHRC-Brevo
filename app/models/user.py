@@ -3,12 +3,15 @@ from datetime import datetime
 from app.db.base import Base
 import enum
 
+
 class UserRole(str, enum.Enum):
     admin = "admin"
     employee = "employee"
     student = "student"
     representative = "representative"
     member = "member"
+    tpo = "tpo"
+
 
 class User(Base):
     __tablename__ = "users"
@@ -17,20 +20,39 @@ class User(Base):
 
     full_name = Column(String, nullable=False)
 
-    email = Column(String, unique=True, nullable=False)
+    email = Column(String, unique=True, nullable=False, index=True)
 
-    mobile = Column(String, unique=True)
+    mobile = Column(String, unique=True, nullable=True)
 
-    password = Column(String)
+    password = Column(String, nullable=False)
 
-    #role = Column(Enum(UserRole), nullable=False)
-    role = Column(Enum(UserRole, name="user_roles"), nullable=False)
+    role = Column(
+        Enum(UserRole, name="user_roles"),
+        nullable=False
+    )
 
-    membership_id = Column(String, unique=True)
+    membership_id = Column(
+        String,
+        unique=True,
+        nullable=True,
+        index=True
+    )
 
-    is_active = Column(Boolean, default=True)
+    # Account is enabled/disabled
+    is_active = Column(
+        Boolean,
+        default=True,
+        nullable=False
+    )
 
-    is_approved = Column(Boolean, default=False)
+    # Admin approval
+    is_approved = Column(
+        Boolean,
+        default=False,
+        nullable=False
+    )
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )

@@ -33,6 +33,7 @@ from app.services.admin_service import AdminService
 from app.schemas.member import MemberStatusUpdate
 from app.schemas.member import BulkDeleteRequest
 from app.schemas.event import EventCreate
+from app.schemas.auth import LoginRequest
 
 from app.services.download import DownloadService
 from app.services.event_service import EventService
@@ -44,7 +45,9 @@ from app.services.registration_service import (
 
 from app.core.security import (
     get_current_user,
-    get_current_admin
+    get_current_admin,
+    verify_password,
+    create_access_token
 )
 
 
@@ -55,6 +58,138 @@ router = APIRouter(
     prefix="/admin",
     tags=["Admin"]
 )
+
+# =========================================================
+# ADMIN CAPTCHA
+# =========================================================
+
+ADMIN_CAPTCHA_STORE = {}
+
+CAPTCHA_EXPIRY_MINUTES = 5
+
+
+def generate_admin_captcha():
+    """
+    Generate a fresh CAPTCHA for admin login.
+    """
+
+    a = random.randint(1, 9)
+    b = random.randint(1, 9)
+
+    # Randomly choose an operation
+    operation = random.choice(["+", "-"])
+
+    if operation == "+":
+        answer = a + b
+        question = f"{a} + {b} = ?"
+
+    else:
+        # Avoid negative answers
+        if b > a:
+            a, b = b, a
+
+        answer = a - b
+        question = f"{a} - {b} = ?"
+
+    captcha_id = secrets.token_urlsafe(32)
+
+    ADMIN_CAPTCHA_STORE[captcha_id] = {
+        "answer": str(answer),
+        "expires_at": datetime.utcnow() + timedelta(
+            minutes=CAPTCHA_EXPIRY_MINUTES
+        )
+    }
+
+    return {
+        "captcha_id": captcha_id,
+        "question": question,
+        "expires_in": CAPTCHA_EXPIRY_MINUTES * 60
+    }
+
+
+def verify_admin_captcha(captcha_id: str, captcha_answer: str):
+    """
+    Verify admin CAPTCHA.
+    CAPTCHA is removed after successful verification.
+    """
+
+    captcha = ADMIN_CAPTCHA_STORE.get(captcha_id)
+
+    if not captcha:
+        return False, "Invalid or expired captcha"
+
+    # Check expiry
+    if datetime.utcnow() > captcha["expires_at"]:
+        ADMIN_CAPTCHA_STORE.pop(captcha_id, None)
+        return False, "Captcha expired"
+
+    # Check answer
+    if str(captcha_answer).strip() != captcha["answer"]:
+        return False, "Invalid captcha"
+
+    # One-time use
+    ADMIN_CAPTCHA_STORE.pop(captcha_id, None)
+
+    return True, "Captcha verified"
+
+# ================= ADMIN LOGIN =================
+
+@router.post("/login")
+def admin_login(
+    payload: LoginRequest,
+    db: Session = Depends(get_db)
+):
+    # Admin login is handled only in admin.py.
+    # Normal user login remains in auth.py.
+
+    user = (
+        db.query(Member)
+        .filter(Member.email == payload.email)
+        .first()
+    )
+
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid admin credentials"
+        )
+
+    user_role = (user.role or "").strip().upper()
+
+    if user_role != "ADMIN":
+        raise HTTPException(
+            status_code=403,
+            detail="Admin Access Required"
+        )
+
+    if not verify_password(
+        payload.password,
+        user.password_hash
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid admin credentials"
+        )
+
+    token = create_access_token({
+        "sub": user.email,
+        "role": user.role,
+        "membership_id": user.membership_id
+    })
+
+    return {
+        "message": "Admin login successful",
+        "access_token": token,
+        "token_type": "bearer",
+        "admin": {
+            "id": user.id,
+            "nhrc_id": user.membership_id,
+            "full_name": user.full_name,
+            "email": user.email,
+            "role": user.role
+        }
+    }
+
 
 @router.get("/admin/db-check")
 def db_check(db: Session = Depends(get_db)):
@@ -112,6 +247,38 @@ def get_representatives(
 ):
     return AdminService.list_users(db, "representative")
 
+
+
+# ================= PENDING USER APPROVAL =================
+
+@router.get("/members/pending")
+def get_pending_members(
+    db: Session = Depends(get_db),
+    admin: Member = Depends(get_current_admin)
+):
+    users = (
+        db.query(Member)
+        .filter(Member.status == "pending")
+        .order_by(Member.id.desc())
+        .all()
+    )
+
+    return {
+        "total_pending": len(users),
+        "users": [
+            {
+                "id": user.id,
+                "nhrc_id": user.membership_id,
+                "full_name": user.full_name,
+                "email": user.email,
+                "role": user.role,
+                "candidate_type": user.candidate_type,
+                "status": user.status
+            }
+            for user in users
+        ]
+    }
+
 @router.get("/member/{membership_id}")
 def get_member_full_details(
     membership_id: str,
@@ -126,17 +293,29 @@ def get_member_full_details(
 
 
 @router.put("/members/{membership_id}/approve")
-def approve_member(membership_id: str, db: Session = Depends(get_db)):
+def approve_member(
+    membership_id: str,
+    db: Session = Depends(get_db),
+    admin: Member = Depends(get_current_admin)
+):
     return AdminService.approve_user(db, membership_id)
 
 
 @router.put("/members/{membership_id}/reject")
-def reject_member(membership_id: str, db: Session = Depends(get_db)):
+def reject_member(
+    membership_id: str,
+    db: Session = Depends(get_db),
+    admin: Member = Depends(get_current_admin)
+):
     return AdminService.reject_user(db, membership_id)
 
 
 @router.delete("/members/{membership_id}")
-def delete_member(membership_id: str, db: Session = Depends(get_db)):
+def delete_member(
+    membership_id: str,
+    db: Session = Depends(get_db),
+    admin: Member = Depends(get_current_admin)
+):
     return AdminService.delete_user(db, membership_id)
 
 

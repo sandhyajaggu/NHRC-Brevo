@@ -25,5 +25,8 @@ class RegisterRequest(BaseModel):
 # ================= LOGIN =================
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=6, max_length=72)
 
+    # Admin login CAPTCHA
+    captcha_id: str
+    captcha: str

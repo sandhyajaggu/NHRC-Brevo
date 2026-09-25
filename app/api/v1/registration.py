@@ -18,109 +18,142 @@ router = APIRouter(
 )
 
 
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.db.session import get_db
+from app.models.user import User, UserRole
+from app.core.security import hash_password
+
+
+router = APIRouter(
+    prefix="/auth",
+    tags=["Authentication"]
+)
+
+
 @router.post("/register")
-def register(
+def register_user(
     payload: RegistrationCreate,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    db: Session = Depends(get_db)
 ):
 
-    role = current_user.role.strip().upper()
+    # ==========================================
+    # CHECK EMAIL
+    # ==========================================
 
-    # ==================================
-    # ONLY STUDENT & EMPLOYEE CAN REGISTER
-    # ==================================
-
-    if role not in ["STUDENT", "EMPLOYEE"]:
-        raise HTTPException(
-            status_code=403,
-            detail="Only HR and Students can register"
-        )
-
-    # ==================================
-    # EVENT OR JOB FAIR REQUIRED
-    # ==================================
-
-    if not payload.event_id and not payload.job_fair_id:
-        raise HTTPException(
-            status_code=400,
-            detail="event_id or job_fair_id required"
-        )
-
-    # ==================================
-    # STUDENT VALIDATION
-    # ==================================
-
-    if role == "STUDENT":
-
-        if not payload.college_name:
-            raise HTTPException(
-                status_code=400,
-                detail="college_name required"
-            )
-
-        if not payload.year_of_passout:
-            raise HTTPException(
-                status_code=400,
-                detail="year_of_passout required"
-            )
-
-    # ==================================
-    # HR VALIDATION
-    # ==================================
-
-    if role == "EMPLOYEE":
-
-        if not payload.company_name:
-            raise HTTPException(
-                status_code=400,
-                detail="company_name required"
-            )
-
-        if not payload.company_location:
-            raise HTTPException(
-                status_code=400,
-                detail="company_location required"
-            )
-
-    registration = EventRegistration(
-
-        member_id=current_user.id,
-
-        event_id=payload.event_id,
-        job_fair_id=payload.job_fair_id,
-
-        # Save only HR or STUDENT
-        member_type="HR" if role == "EMPLOYEE" else "STUDENT",
-
-        full_name=payload.full_name,
-        email=current_user.email,
-
-        phone=payload.phone,
-        location=payload.location,
-
-        iam_a=payload.iam_a,
-        nhrc_id=payload.nhrc_id,
-
-        college_name=payload.college_name,
-        year_of_passout=payload.year_of_passout,
-
-        company_name=payload.company_name,
-        company_location=payload.company_location,
-
-        receive_updates=payload.receive_updates,
-
-        status="PENDING"
+    existing_user = (
+        db.query(User)
+        .filter(User.email == payload.email)
+        .first()
     )
 
-    db.add(registration)
+    if existing_user:
+        raise HTTPException(
+            status_code=400,
+            detail="Email already registered"
+        )
+
+    # ==========================================
+    # CHECK MOBILE
+    # ==========================================
+
+    if payload.mobile:
+
+        existing_mobile = (
+            db.query(User)
+            .filter(User.mobile == payload.mobile)
+            .first()
+        )
+
+        if existing_mobile:
+            raise HTTPException(
+                status_code=400,
+                detail="Mobile number already registered"
+            )
+
+    # ==========================================
+    # PASSWORD VALIDATION
+    # ==========================================
+
+    if payload.password != payload.confirm_password:
+        raise HTTPException(
+            status_code=400,
+            detail="Passwords do not match"
+        )
+
+    # ==========================================
+    # ROLE VALIDATION
+    # ==========================================
+
+    try:
+        role = UserRole(payload.role.lower())
+    except ValueError:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invalid role. Allowed roles: "
+                "employee, student, representative, "
+                "member, tpo"
+            )
+        )
+
+    # ==========================================
+    # CREATE USER
+    # ==========================================
+
+    user = User(
+
+        full_name=payload.full_name,
+
+        email=payload.email,
+
+        mobile=payload.mobile,
+
+        password=hash_password(payload.password),
+
+        role=role,
+
+        membership_id=payload.membership_id,
+
+        # VERY IMPORTANT
+        is_active=True,
+
+        # VERY IMPORTANT
+        is_approved=False
+    )
+
+    db.add(user)
+
     db.commit()
-    db.refresh(registration)
+
+    db.refresh(user)
+
+    # ==========================================
+    # RESPONSE
+    # ==========================================
 
     return {
-        "message": "Registration Successful",
-        "registration_id": registration.id,
-        "member_type": registration.member_type
+
+        "message": (
+            "Registration successful. "
+            "Your account is waiting for admin approval."
+        ),
+
+        "user_id": user.id,
+
+        "nhrc_id": user.membership_id,
+
+        "full_name": user.full_name,
+
+        "email": user.email,
+
+        "role": user.role.value,
+
+        "is_approved": user.is_approved,
+
+        "is_active": user.is_active
     }
 @router.post("/training/register")
 def register_training(

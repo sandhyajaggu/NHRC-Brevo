@@ -8,7 +8,7 @@ from app.models.member import Member
 from app.models.otp_verifications import OTPVerification
 #from app.models.user import User, UserRole
 from app.models.token_blacklist import TokenBlacklist
-from app.schemas.auth import RegisterAdminRequest, RegisterRequest, LoginRequest
+from app.schemas.auth import RegisterRequest, LoginRequest
 from app.core.security import hash_password, verify_password, create_access_token
 from app.utils.captcha import generate_captcha, verify_captcha
 from app.utils.email import generate_otp
@@ -168,7 +168,10 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
 
         candidate_type=payload.candidate_type,
 
-        role=role
+        role=role,
+
+        # New account must wait for admin approval
+        status="pending"
     )
 
     db.add(member)
@@ -176,68 +179,18 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     db.refresh(member)
 
     return {
-        "message": "User registered successfully",
+        "message": (
+            "Registration successful. "
+            "Your account is pending admin approval."
+        ),
+        "nhrc_id": membership_id,
         "membership_id": membership_id,
-        "role": role
+        "full_name": member.full_name,
+        "email": member.email,
+        "role": role,
+        "status": member.status
     }
-# ============== admin login ========================
-@router.post("/admin/login")
-def admin_login(
-    payload: LoginRequest,
-    db: Session = Depends(get_db)
-):
 
-    user = db.query(Member).filter(
-        Member.email == payload.email
-    ).first()
-
-    # =========================
-    # CHECK USER
-    # =========================
-
-    if not user:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid admin credentials"
-        )
-
-    # =========================
-    # CHECK ROLE
-    # =========================
-
-    if user.role.strip().upper() != "ADMIN":
-        raise HTTPException(
-            status_code=403,
-            detail="Admin Access Required"
-        )
-
-    # =========================
-    # CHECK PASSWORD
-    # =========================
-
-    if not verify_password(
-        payload.password,
-        user.password_hash
-    ):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid admin credentials"
-        )
-
-    # =========================
-    # CREATE TOKEN
-    # =========================
-
-    token = create_access_token({
-        "sub": user.email,
-        "role": user.role,
-        "membership_id": user.membership_id
-    })
-
-    return {
-        "access_token": token,
-        "token_type": "bearer"
-    }
 # ================= LOGIN =================
 
 @router.post("/login")
@@ -272,18 +225,31 @@ def login(
         )
 
     # ==============================
-    # APPROVAL CHECK
+    # ACCOUNT STATUS / ADMIN APPROVAL
     # ==============================
-    if user.status == "pending":
+
+    user_status = (user.status or "").strip().lower()
+
+    # Only an approved user can receive a JWT.
+    if user_status == "pending":
         raise HTTPException(
             status_code=403,
-            detail="Your account is pending approval"
+            detail=(
+                "Your account is pending admin approval. "
+                "Please wait until an administrator approves your account."
+            )
         )
 
-    if user.status == "rejected":
+    if user_status == "rejected":
         raise HTTPException(
             status_code=403,
             detail="Your account was rejected by admin"
+        )
+
+    if user_status != "approved":
+        raise HTTPException(
+            status_code=403,
+            detail="Your account has not been approved by admin"
         )
 
     # ==============================
@@ -374,6 +340,7 @@ def login(
         "member": {
             "id": user.id,
             "membership_id": user.membership_id,
+            "nhrc_id": user.membership_id,
             "full_name": user.full_name,
             "email": user.email,
             "role": user.role,
