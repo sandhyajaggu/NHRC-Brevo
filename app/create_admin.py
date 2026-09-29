@@ -2,6 +2,7 @@ import os
 import sys
 
 from dotenv import load_dotenv
+from sqlalchemy import func
 
 from app.core.database import SessionLocal
 
@@ -16,8 +17,8 @@ load_dotenv()
 def create_admin():
 
     # Credentials come from the environment so they never live in the repo.
-    email = os.getenv("ADMIN_EMAIL")
-    password = os.getenv("ADMIN_PASSWORD")
+    email = (os.getenv("ADMIN_EMAIL") or "").strip().lower()
+    password = (os.getenv("ADMIN_PASSWORD") or "").strip()
     full_name = os.getenv("ADMIN_NAME", "Administrator")
 
     if not email or not password:
@@ -26,13 +27,15 @@ def create_admin():
     db = SessionLocal()
 
     existing = db.query(Member).filter(
-        Member.email == email
+        func.lower(Member.email) == email
     ).first()
 
     if existing:
 
-        # Re-running the script resets the admin password and role
+        # Re-running the script resets the admin password, role and status
         existing.role = "ADMIN"
+
+        existing.status = "approved"
 
         existing.password_hash = hash_password(password)
 

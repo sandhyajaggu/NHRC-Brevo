@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -203,7 +204,7 @@ def login(
     # FETCH USER
     # ==============================
     user = db.query(Member).filter(
-        Member.email == payload.email
+        func.lower(Member.email) == payload.email.strip().lower()
     ).first()
 
     if not user:

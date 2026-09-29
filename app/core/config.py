@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     BREVO_SENDER_NAME:str
     BREVO_SENDER_EMAIL:str
 
+    # Only used by app/create_admin.py
+    ADMIN_EMAIL: str | None = None
+    ADMIN_PASSWORD: str | None = None
+    ADMIN_NAME: str | None = None
 
     class Config:
         env_file = ".env"

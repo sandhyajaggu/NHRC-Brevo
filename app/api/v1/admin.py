@@ -146,7 +146,7 @@ def admin_login(
 
     user = (
         db.query(Member)
-        .filter(Member.email == payload.email)
+        .filter(func.lower(Member.email) == payload.email.strip().lower())
         .first()
     )
 
