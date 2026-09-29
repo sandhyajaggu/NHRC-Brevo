@@ -4,6 +4,7 @@ from app.core.database import get_db
 from fastapi import Form, UploadFile, File
 
 
+from app.models.employee import Employee
 from app.models.member import Member
 from app.models.user import User
 from app.schemas.member import MemberCreate
@@ -45,23 +46,83 @@ def create_employee(
     payload: EmployeeCreate,
     db: Session = Depends(get_db)
 ):
-    # Find member using membership_id
-    member = db.query(Member).filter(
-        Member.membership_id == payload.membership_id
-    ).first()
+    # ---------------------------------------------------------
+    # Find Member using membership_id
+    # ---------------------------------------------------------
+    member = (
+        db.query(Member)
+        .filter(
+            Member.membership_id == payload.membership_id
+        )
+        .first()
+    )
 
-    # If not found → error
     if not member:
-        raise HTTPException(status_code=404, detail="Invalid membership_id")
+        raise HTTPException(
+            status_code=404,
+            detail="Invalid membership_id"
+        )
 
-    #Replace membership_id with actual DB id
+    # ---------------------------------------------------------
+    # Set actual Member DB ID
+    # ---------------------------------------------------------
     payload.member_id = member.id
 
-    # Call service
-    return EmployeeService.create_employee(db, payload)
+    # ---------------------------------------------------------
+    # Create Employee
+    # ---------------------------------------------------------
+    EmployeeService.create_employee(
+        db,
+        payload
+    )
 
+    # ---------------------------------------------------------
+    # Fetch newly created employee
+    # ---------------------------------------------------------
+    employee = (
+        db.query(Employee)
+        .filter(
+            Employee.member_id == member.id
+        )
+        .order_by(Employee.id.desc())
+        .first()
+    )
 
+    if not employee:
+        raise HTTPException(
+            status_code=500,
+            detail="Employee was created but details could not be retrieved"
+        )
 
+    # ---------------------------------------------------------
+    # Convert Employee SQLAlchemy object to dictionary
+    # ---------------------------------------------------------
+    employee_data = {
+        column.name: getattr(employee, column.name)
+        for column in Employee.__table__.columns
+        if column.name not in {
+            "password",
+            "password_hash",
+            "email_otp",
+            "otp",
+            "confirm_password"
+        }
+    }
+
+    # ---------------------------------------------------------
+    # Add Member/account information
+    # ---------------------------------------------------------
+    employee_data["nhrc_id"] = member.membership_id
+    employee_data["status"] = member.status
+    employee_data["role"] = member.role
+
+    # ---------------------------------------------------------
+    # Response
+    # ---------------------------------------------------------
+    return {
+        "message": "Employee created successfully",
+        "employee": employee_data
+    }
 @router.post("/student-university")
 def create_student_university(
     payload: StudentUniversityCreate,

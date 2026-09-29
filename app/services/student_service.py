@@ -45,9 +45,9 @@ class StudentService:
         # Store password in MEMBERS table
         member.password_hash = hash_password(payload.password)
 
-        # Optional role/status update
+        # Set role; status stays pending until admin approves
         member.role = "STUDENT"
-        member.status = "approved"
+        member.status = "pending"  # requires admin approval before login
 
         # Create student record
         student = StudentUniversityDetails(
@@ -117,9 +117,9 @@ class StudentService:
         # Store password in MEMBERS table
         member.password_hash = hash_password(payload.password)
 
-        # Optional role/status update
+        # Set role; status stays pending until admin approves
         member.role = "STUDENT"
-        member.status = "approved"
+        member.status = "pending"  # requires admin approval before login
 
         # Create student record
         student = StudentAutonomousDetails(

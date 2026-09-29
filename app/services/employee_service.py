@@ -77,7 +77,7 @@ class EmployeeService:
 
         member.candidate_type = "employee"
 
-        member.status = "approved"
+        member.status = "pending"  # requires admin approval before login
 
         # =========================
         # CREATE EMPLOYEE
