@@ -1,3 +1,8 @@
+import os
+import sys
+
+from dotenv import load_dotenv
+
 from app.core.database import SessionLocal
 
 from app.models.member import Member
@@ -5,26 +10,35 @@ from app.models.member import Member
 from app.core.security import hash_password
 
 
+load_dotenv()
+
+
 def create_admin():
+
+    # Credentials come from the environment so they never live in the repo.
+    email = os.getenv("ADMIN_EMAIL")
+    password = os.getenv("ADMIN_PASSWORD")
+    full_name = os.getenv("ADMIN_NAME", "Administrator")
+
+    if not email or not password:
+        sys.exit("Set ADMIN_EMAIL and ADMIN_PASSWORD before running this script")
 
     db = SessionLocal()
 
     existing = db.query(Member).filter(
-        Member.email == "shivakrishna@nhrc.com"
+        Member.email == email
     ).first()
 
     if existing:
 
-        print("Admin already exists")
-
-        # OPTIONAL:
-        # update role if wrong
-
+        # Re-running the script resets the admin password and role
         existing.role = "ADMIN"
+
+        existing.password_hash = hash_password(password)
 
         db.commit()
 
-        print("Admin role updated to ADMIN")
+        print("Admin already exists - role and password updated")
 
         return
 
@@ -32,11 +46,11 @@ def create_admin():
 
         membership_id="ADMIN001",
 
-        full_name="Shiva Krishna",
+        full_name=full_name,
 
-        email="shivakrishna@nhrc.com",
+        email=email,
 
-        password_hash=hash_password("Shiva@123"),
+        password_hash=hash_password(password),
 
         role="ADMIN",
 

@@ -1,3 +1,4 @@
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from app.models.employee import Employee
 from app.models.member import Member
@@ -81,7 +82,7 @@ class AdminRepository:
         ).first()
 
         if not member:
-            raise Exception("Member not found")
+            raise HTTPException(status_code=404, detail="Member not found")
 
         #  MEMBER BASE DATA
         member_data = AdminRepository.model_to_dict(member)
