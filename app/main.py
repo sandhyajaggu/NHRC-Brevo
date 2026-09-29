@@ -22,7 +22,6 @@ from fastapi.staticfiles import StaticFiles
 from app.api.v1 import talent_publications_upload
 from app.api.v1 import talent_publication
 #from app.api.v1 import chatbot
-from app.api.v1 import test
 
 
 
@@ -101,7 +100,6 @@ app.mount(
 
 app.include_router(talent_publications_upload.router)
 app.include_router(talent_publication.router)
-app.include_router(test.router)
 
 #app.include_router(chatbot.router)
 
