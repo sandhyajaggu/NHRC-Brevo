@@ -7,6 +7,7 @@ from app.models.student import (
     StudentAutonomousDetails
 )
 from app.models.member import Member
+from app.utils.registration_response import registration_response
 
 
 class StudentService:
@@ -75,13 +76,9 @@ class StudentService:
 
         db.commit()
         db.refresh(student)
+        db.refresh(member)
 
-        return {
-            "message": "Student university details created successfully",
-            "student_id": student.id,
-            "membership_id": member.membership_id,
-            "email": member.email
-        }
+        return registration_response(member, student)
 
     # =========================
     # AUTONOMOUS STUDENT
@@ -146,10 +143,6 @@ class StudentService:
 
         db.commit()
         db.refresh(student)
+        db.refresh(member)
 
-        return {
-            "message": "Student autonomous details created successfully",
-            "student_id": student.id,
-            "membership_id": member.membership_id,
-            "email": member.email
-        }
+        return registration_response(member, student)

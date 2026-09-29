@@ -24,6 +24,7 @@ from app.schemas.student import (
 from app.services.member_service import MemberService
 from app.services.employee_service import EmployeeService
 from app.services.student_service import StudentService
+from app.utils.registration_response import registration_response
 
 
 router = APIRouter(
@@ -94,35 +95,9 @@ def create_employee(
             detail="Employee was created but details could not be retrieved"
         )
 
-    # ---------------------------------------------------------
-    # Convert Employee SQLAlchemy object to dictionary
-    # ---------------------------------------------------------
-    employee_data = {
-        column.name: getattr(employee, column.name)
-        for column in Employee.__table__.columns
-        if column.name not in {
-            "password",
-            "password_hash",
-            "email_otp",
-            "otp",
-            "confirm_password"
-        }
-    }
+    db.refresh(member)
 
-    # ---------------------------------------------------------
-    # Add Member/account information
-    # ---------------------------------------------------------
-    employee_data["nhrc_id"] = member.membership_id
-    employee_data["status"] = member.status
-    employee_data["role"] = member.role
-
-    # ---------------------------------------------------------
-    # Response
-    # ---------------------------------------------------------
-    return {
-        "message": "Employee created successfully",
-        "employee": employee_data
-    }
+    return registration_response(member, employee)
 @router.post("/student-university")
 def create_student_university(
     payload: StudentUniversityCreate,

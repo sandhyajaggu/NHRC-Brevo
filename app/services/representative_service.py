@@ -1,6 +1,7 @@
 from fastapi import HTTPException
 from app.models.member import Member
 from app.repositories.representative_repository import RepresentativeRepository
+from app.utils.registration_response import registration_response
 
 
 class RepresentativeService:
@@ -27,23 +28,10 @@ class RepresentativeService:
 
 
     @staticmethod
-    def _build_response(message, obj):
-        return {
-            "message": message,
-            "id": obj.id,
-            "member_id": obj.member_id,
-            "college_name": obj.college_name,
-            "university_name": getattr(obj, "university_name", None),
-            "college_code": obj.college_code,
-            "designation": obj.designation,
-            "department": obj.department,
-            "state": obj.state,
-            "district": obj.district,
-            "pincode": obj.pincode,
-            "experience": obj.experience,
-            "official_mail_id": obj.official_mail_id,
-            "mobile_number": obj.mobile_number
-        }
+    def _build_response(db, obj):
+        member = db.query(Member).filter_by(id=obj.member_id).first()
+
+        return registration_response(member, obj)
 
 
     # 🔹 UNIVERSITY
@@ -54,10 +42,7 @@ class RepresentativeService:
 
         obj = RepresentativeRepository.create_university(db, data)
 
-        return RepresentativeService._build_response(
-            "Representative (University) created successfully",
-            obj
-        )
+        return RepresentativeService._build_response(db, obj)
 
 
     # 🔹 AUTONOMOUS
@@ -68,10 +53,7 @@ class RepresentativeService:
 
         obj = RepresentativeRepository.create_autonomous(db, data)
 
-        return RepresentativeService._build_response(
-            "Representative (Autonomous) created successfully",
-            obj
-        )
+        return RepresentativeService._build_response(db, obj)
 
 
     # 🔹 BOTH
@@ -82,8 +64,5 @@ class RepresentativeService:
 
         obj = RepresentativeRepository.create_both(db, data)
 
-        return RepresentativeService._build_response(
-            "Representative (Both) created successfully",
-            obj
-        )
+        return RepresentativeService._build_response(db, obj)
     
